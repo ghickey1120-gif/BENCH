@@ -1,0 +1,1376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bench — in-game tracker</title>
+<!-- tells iOS a home screen icon should open full screen instead of in Safari -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bench">
+<meta name="theme-color" content="#0E1218">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F1EDE5; --panel:#FFFFFF; --panel2:#F7F3EB; --edge:#DDD5C7;
+  --text:#191D24; --dim:#6E7783; --amber:#B9710A; --amber-soft:#F4E2C4;
+  --make:#1C8F55; --miss:#C43920;
+  --wood:#EBDCC1; --wood2:#E2CFAE; --chalk:#8E7B5C; --paint:#DFC79C;
+  --shadow:0 1px 2px rgba(30,22,10,.10), 0 6px 18px rgba(30,22,10,.07);
+  --r:14px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1218; --panel:#161C25; --panel2:#1E2631; --edge:#2C3644;
+    --text:#ECE8E0; --dim:#94A1B2; --amber:#F2A63B; --amber-soft:#3A2A12;
+    --make:#3BC77E; --miss:#F2603F;
+    --wood:#1A222C; --wood2:#212B37; --chalk:#7E8EA3; --paint:#232F3D;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1218; --panel:#161C25; --panel2:#1E2631; --edge:#2C3644;
+  --text:#ECE8E0; --dim:#94A1B2; --amber:#F2A63B; --amber-soft:#3A2A12;
+  --make:#3BC77E; --miss:#F2603F;
+  --wood:#1A222C; --wood2:#212B37; --chalk:#7E8EA3; --paint:#232F3D;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%; scroll-padding-top:env(safe-area-inset-top,0px); -webkit-text-size-adjust:100%}
+body{
+  height:100%; margin:0; background:var(--bg); color:var(--text);
+  font-family:Barlow, "Helvetica Neue", Arial, sans-serif; font-size:16px; line-height:1.4;
+  -webkit-tap-highlight-color:transparent; overscroll-behavior:none;
+}
+button{font:inherit; color:inherit; background:none; border:none; cursor:pointer}
+:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
+.num{font-family:"Barlow Condensed", Barlow, sans-serif; font-variant-numeric:tabular-nums; letter-spacing:.01em}
+
+/* ---------- shell ---------- */
+.app{height:100%; display:flex; flex-direction:column; gap:10px; padding:10px; max-width:1500px; margin:0 auto}
+
+/* ---------- header ---------- */
+.bar{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:var(--panel); border:1px solid var(--edge); border-radius:var(--r);
+  padding:8px 10px; box-shadow:var(--shadow);
+}
+.matchup{display:flex; flex-direction:column; min-width:0; margin-right:auto}
+.matchup input{
+  font-family:"Barlow Condensed",sans-serif; font-weight:600; font-size:24px; line-height:1.1;
+  background:none; border:none; color:var(--text); padding:0; width:min(46vw,260px);
+}
+.matchup input::placeholder{color:var(--dim)}
+.matchup .sub{font-size:12px; color:var(--dim)}
+.periods{display:flex; gap:4px; background:var(--panel2); padding:4px; border-radius:11px; border:1px solid var(--edge)}
+.periods button{
+  min-width:44px; height:40px; border-radius:8px; font-family:"Barlow Condensed",sans-serif;
+  font-weight:600; font-size:19px; color:var(--dim);
+}
+.periods button[aria-pressed="true"]{background:var(--amber); color:#14181F}
+.tool{
+  height:44px; padding:0 14px; border-radius:10px; border:1px solid var(--edge);
+  background:var(--panel2); font-size:15px; font-weight:500; white-space:nowrap;
+}
+.tool:disabled{opacity:.4}
+.tool.undo{display:flex; flex-direction:column; justify-content:center; align-items:flex-start; padding:0 12px; line-height:1.1}
+.tool.undo small{font-size:11px; color:var(--dim); max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.tool.timeout{background:var(--amber); border-color:transparent; color:#14181F; font-weight:600}
+
+/* ---------- report ---------- */
+.chips{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px}
+.chips button{
+  padding:9px 13px; border-radius:99px; border:1px solid var(--edge); background:var(--panel);
+  font-size:14px; color:var(--dim);
+}
+.chips button[aria-pressed="true"]{background:var(--text); color:var(--bg); border-color:transparent; font-weight:500}
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:8px; margin-bottom:12px}
+.tile{background:var(--panel); border:1px solid var(--edge); border-radius:12px; padding:9px 11px}
+.tile .k{display:block; font-size:12px; color:var(--dim); line-height:1.2}
+.tile b{display:block; font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:31px; line-height:1.05}
+.tile .s{font-size:12px; color:var(--dim)}
+.huddle{background:var(--amber-soft); border:1px solid var(--edge); border-radius:var(--r); padding:12px; margin-bottom:12px}
+.huddle h3{margin:0 0 6px; font-family:"Barlow Condensed",sans-serif; font-size:15px; letter-spacing:.04em; color:var(--dim)}
+.huddle ul{margin:0; padding-left:18px}
+.huddle li{margin:3px 0; line-height:1.35}
+.minicourt{display:flex; justify-content:center; padding:2px 0}
+.minicourt svg{width:100%; max-width:330px; height:auto}
+.legend{display:flex; gap:14px; justify-content:center; font-size:12px; color:var(--dim); margin-top:6px}
+.legend i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:baseline}
+
+/* ---------- main layout ---------- */
+main{flex:1; min-height:0; display:grid; gap:10px; grid-template-columns:minmax(0,1fr) minmax(330px,.85fr)}
+@media (max-width:900px){
+  main{grid-template-columns:1fr; overflow-y:auto; -webkit-overflow-scrolling:touch}
+  .app{height:auto; min-height:100%}
+  body{height:auto}
+}
+.card{
+  background:var(--panel); border:1px solid var(--edge); border-radius:var(--r);
+  box-shadow:var(--shadow); display:flex; flex-direction:column; min-height:0;
+}
+.card > header{
+  display:flex; align-items:baseline; gap:10px; padding:10px 12px 6px;
+}
+.card h2{margin:0; font-family:"Barlow Condensed",sans-serif; font-weight:600; font-size:17px; letter-spacing:.02em}
+.card header .spacer{margin-left:auto}
+.tally{font-family:"Barlow Condensed",sans-serif; font-size:17px; color:var(--dim)}
+.tally b{color:var(--text); font-weight:600}
+
+/* ---------- court ---------- */
+.courtwrap{flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:0 10px 10px}
+svg.court{width:100%; height:100%; max-height:100%; touch-action:manipulation; display:block}
+.shotbar{
+  display:flex; flex-direction:column; gap:6px; padding:0 10px 10px;
+}
+.shotrow{display:flex; gap:8px; align-items:stretch}
+.zoneread{
+  display:flex; align-items:center; gap:8px;
+  font-family:"Barlow Condensed",sans-serif; font-size:16px; color:var(--dim);
+}
+.zoneread b{color:var(--text); font-weight:600}
+.shotbar .hint{
+  flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
+  color:var(--dim); font-size:14px; border:1px dashed var(--edge); border-radius:12px; padding:10px;
+  text-align:center;
+}
+.shotbar button{
+  flex:1; height:60px; border-radius:12px; font-family:"Barlow Condensed",sans-serif;
+  font-weight:600; font-size:24px; color:#0E1218; display:flex; align-items:center; justify-content:center; gap:8px;
+}
+.zoneread .area{font-style:normal; color:var(--amber); font-weight:600}
+.zoneread .area.jail{background:var(--amber); color:#14181F; border-radius:5px; padding:1px 6px}
+.zoneread .cancel{margin-left:auto; height:30px; flex:0 0 34px; font-size:15px}
+.shotbar .made{background:var(--make)}
+.shotbar .missed{background:var(--miss); color:#fff}
+.shotbar .cancel{flex:0 0 56px; background:var(--panel2); border:1px solid var(--edge); color:var(--dim); font-size:20px}
+
+/* ---------- calls panel ---------- */
+.calls{overflow-y:auto; padding:0 12px 12px; display:flex; flex-direction:column; gap:14px}
+.scope{display:flex; gap:3px; background:var(--panel2); border:1px solid var(--edge); border-radius:9px; padding:3px}
+.scope button{padding:5px 10px; border-radius:7px; font-size:13px; color:var(--dim)}
+.scope button[aria-pressed="true"]{background:var(--panel); color:var(--text); box-shadow:var(--shadow)}
+.group h3{
+  margin:0 0 6px; font-family:"Barlow Condensed",sans-serif; font-size:14px; font-weight:600;
+  color:var(--dim); letter-spacing:.06em;
+}
+.grid{display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+.grid.three{grid-template-columns:repeat(3,1fr)}
+@media (max-width:420px){.grid.three{grid-template-columns:repeat(3,1fr)}}
+.callwrap{position:relative}
+.call{
+  width:100%; min-height:88px; border-radius:13px; border:1px solid var(--edge); background:var(--panel2);
+  display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between;
+  padding:9px 11px 6px; gap:2px; transition:transform .06s ease, background .12s ease;
+}
+.call:active{transform:scale(.97); background:var(--amber-soft)}
+.call .label{font-size:14px; font-weight:500; text-align:left; line-height:1.15; padding-right:26px; overflow-wrap:anywhere}
+.call .n{font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:40px; line-height:.95; color:var(--amber)}
+.call.zero .n{color:var(--dim); opacity:.5}
+.minus{
+  position:absolute; top:4px; right:4px; width:32px; height:32px; border-radius:8px;
+  color:var(--dim); font-size:18px; line-height:1; display:flex; align-items:center; justify-content:center;
+}
+.minus:active{background:var(--edge)}
+.flash{animation:pop .35s ease}
+@keyframes pop{0%{background:var(--amber-soft)}100%{background:var(--panel2)}}
+@media (prefers-reduced-motion:reduce){.flash{animation:none} .call{transition:none}}
+
+/* ---------- sheet ---------- */
+.sheet{
+  position:fixed; inset:0; background:rgba(8,10,14,.55); z-index:50;
+  display:flex; align-items:flex-end; justify-content:center; padding:0;
+}
+.sheet[hidden]{display:none}
+.sheet .inner{
+  background:var(--bg); width:100%; max-width:820px; max-height:92%; overflow-y:auto;
+  border-radius:18px 18px 0 0; padding:14px 14px calc(20px + env(safe-area-inset-bottom,0px));
+  border:1px solid var(--edge);
+}
+@media (min-width:700px){.sheet{align-items:center} .sheet .inner{border-radius:18px; max-height:88%}}
+.sheet h2{font-family:"Barlow Condensed",sans-serif; margin:0; font-size:22px}
+.sheethead{display:flex; align-items:center; gap:10px; margin-bottom:12px; position:sticky; top:-14px; background:var(--bg); padding:4px 0 8px}
+.sheethead .spacer{margin-left:auto}
+.block{background:var(--panel); border:1px solid var(--edge); border-radius:var(--r); padding:12px; margin-bottom:12px}
+.block h3{margin:0 0 8px; font-family:"Barlow Condensed",sans-serif; font-size:15px; letter-spacing:.04em; color:var(--dim)}
+table{width:100%; border-collapse:collapse; font-size:14px}
+th,td{padding:6px 6px; text-align:right; border-bottom:1px solid var(--edge)}
+th:first-child,td:first-child{text-align:left}
+th{font-weight:500; color:var(--dim); font-size:12px}
+tbody tr:last-child td{border-bottom:none}
+td.n{font-family:"Barlow Condensed",sans-serif; font-size:16px}
+.row{display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap}
+.row label{font-size:13px; color:var(--dim); min-width:108px}
+input[type=text],select{
+  flex:1; min-width:120px; height:42px; padding:0 10px; border-radius:10px;
+  border:1px solid var(--edge); background:var(--panel2); color:var(--text); font:inherit;
+}
+.btn{height:46px; padding:0 16px; border-radius:11px; border:1px solid var(--edge); background:var(--panel2); font-weight:500}
+.btn.primary{background:var(--amber); border-color:transparent; color:#14181F; font-weight:600}
+.btn.ghost{background:none}
+.btn.danger{color:var(--miss)}
+.btns{display:flex; gap:8px; flex-wrap:wrap}
+.namelist{display:flex; flex-direction:column; gap:8px}
+.nameitem{display:flex; gap:8px; align-items:center}
+.nameitem .btn{height:42px; padding:0 12px}
+.note{font-size:13px; color:var(--dim); margin:6px 0 0}
+.gamelist{display:flex; flex-direction:column; gap:6px}
+.gameitem{display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--edge); border-radius:10px; background:var(--panel2)}
+.gameitem .who{flex:1; min-width:0}
+.gameitem .who b{display:block; font-weight:600}
+.gameitem .who span{font-size:12px; color:var(--dim)}
+@media print{
+  :root{
+    --bg:#fff; --panel:#fff; --panel2:#fff; --edge:#bbb; --text:#000; --dim:#444;
+    --amber:#8a5a00; --amber-soft:#fff; --make:#0a6b3a; --miss:#a32a14;
+    --wood:#fff; --wood2:#fff; --chalk:#666; --paint:#eee; --shadow:none;
+    padding:0;
+  }
+  body{background:#fff}
+  .app, .toast, #settings{display:none !important}
+  .sheet{position:static; inset:auto; background:none; display:block; padding:0}
+  .sheet[hidden]{display:none !important}
+  .sheet .inner{max-width:none; max-height:none; overflow:visible; border:none; border-radius:0; padding:0}
+  .sheethead{position:static}
+  .sheethead .btn, .chips, #reportactions{display:none !important}
+  .block, .tiles, .huddle{break-inside:avoid; page-break-inside:avoid}
+  .minicourt svg{max-width:270px}
+  a[href]:after{content:''}
+}
+.toast{
+  position:fixed; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom,0px));
+  background:var(--text); color:var(--bg); padding:10px 16px; border-radius:99px; font-size:14px; z-index:80;
+}
+.toast[hidden]{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="bar">
+    <div class="matchup">
+      <input id="opp" type="text" placeholder="Opponent" autocomplete="off" spellcheck="false" aria-label="Opponent name">
+      <span class="sub" id="gamedate"></span>
+    </div>
+    <div class="periods" id="periods" role="group" aria-label="Period"></div>
+    <button class="tool undo" id="undo" disabled><span>Undo</span><small id="undotxt">nothing yet</small></button>
+    <button class="tool timeout" id="timeout">Timeout</button>
+    <button class="tool" id="openreport">Report</button>
+    <button class="tool" id="opensettings" aria-label="Settings">Setup</button>
+  </header>
+
+  <main>
+    <section class="card">
+      <header>
+        <h2>Opponent shots</h2>
+        <span class="spacer"></span>
+        <span class="tally" id="shottally">0 for 0</span>
+      </header>
+      <div class="courtwrap"><svg class="court" id="court" viewBox="-1.2 -1.2 52.4 49.4" aria-label="Half court. Tap where the shot was taken."></svg></div>
+      <div class="shotbar" id="shotbar">
+        <div class="hint" id="shothint">Tap the spot on the floor where the shot went up</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <header>
+        <h2>Our calls</h2>
+        <span class="spacer"></span>
+        <div class="scope" id="scope" role="group" aria-label="Count totals for">
+          <button data-scope="game" aria-pressed="true">Whole game</button>
+          <button data-scope="period" aria-pressed="false">This period</button>
+        </div>
+      </header>
+      <div class="calls">
+        <div class="group">
+          <h3>Triggers</h3>
+          <div class="grid three" id="triggers"></div>
+        </div>
+        <div class="group">
+          <h3>Set plays</h3>
+          <div class="grid" id="sets"></div>
+        </div>
+        <div class="group">
+          <h3>Baseline out of bounds</h3>
+          <div class="grid" id="blobs"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="sheet" id="report" hidden>
+  <div class="inner">
+    <div class="sheethead">
+      <h2 id="reporttitle">Report</h2>
+      <span class="spacer"></span>
+      <button class="btn ghost" data-close="report">Close</button>
+    </div>
+    <div id="reportbody"></div>
+  </div>
+</div>
+
+<div class="sheet" id="settings" hidden>
+  <div class="inner">
+    <div class="sheethead">
+      <h2>Setup</h2>
+      <span class="spacer"></span>
+      <button class="btn ghost" data-close="settings">Close</button>
+    </div>
+    <div class="block">
+      <h3>Court and clock</h3>
+      <div class="row">
+        <label for="level">Three-point line</label>
+        <select id="level">
+          <option value="hs">High school — 19' 9"</option>
+          <option value="ncaa">College — 22' 1.75"</option>
+          <option value="nba">NBA — 23' 9"</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="scheme">Defense</label>
+        <select id="scheme">
+          <option value="left">Lock left — jail in the left corner</option>
+          <option value="right">Lock right — jail in the right corner</option>
+          <option value="none">Plain chart, no zones</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="basket">Basket at the</label>
+        <select id="basket">
+          <option value="top">Top</option>
+          <option value="bottom">Bottom</option>
+          <option value="left">Left</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="leftAt">Left side at the</label>
+        <select id="leftAt"></select>
+      </div>
+      <p class="note">Set to match the playbook out of the box: basket at the top, left side on the left, jail in the top-left. Turn it whichever way you stand.</p>
+      <div class="row">
+        <label for="periodStyle">Periods</label>
+        <select id="periodStyle">
+          <option value="quarters">Four quarters</option>
+          <option value="halves">Two halves</option>
+        </select>
+      </div>
+    </div>
+    <div class="block">
+      <h3>Triggers</h3>
+      <div class="namelist" id="edit-triggers"></div>
+    </div>
+    <div class="block">
+      <h3>Set plays</h3>
+      <div class="namelist" id="edit-sets"></div>
+      <button class="btn ghost" id="add-set" style="margin-top:8px">Add a set play</button>
+    </div>
+    <div class="block">
+      <h3>Baseline out of bounds</h3>
+      <div class="namelist" id="edit-blobs"></div>
+      <button class="btn ghost" id="add-blob" style="margin-top:8px">Add a BLOB</button>
+    </div>
+    <div class="block">
+      <h3>Games</h3>
+      <div class="btns" style="margin-bottom:10px">
+        <button class="btn primary" id="newgame">Start a new game</button>
+        <button class="btn" id="savebackup">Save a backup file</button>
+        <button class="btn" id="openbackup">Open a backup</button>
+        <input type="file" id="backupfile" accept=".json,application/json" hidden>
+      </div>
+      <div class="gamelist" id="gamelist"></div>
+      <p class="note" id="storagenote"></p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================ court geometry ============================ */
+const W = 50, L = 47, HOOPY = 5.25, HOOPX = 25;
+const LEVELS = {
+  hs:   {r3:19.75,  cornerX:null, lane:12, restricted:0},
+  ncaa: {r3:22.146, cornerX:null, lane:12, restricted:4},
+  nba:  {r3:23.75,  cornerX:3,    lane:16, restricted:4}
+};
+function geom(level){
+  const p = LEVELS[level] || LEVELS.hs;
+  const w0 = Math.sqrt(p.r3*p.r3 - HOOPY*HOOPY);      // arc half-width at the baseline
+  let cx = 25 - w0, breakY = 0;
+  if (p.cornerX != null && p.cornerX > 25 - w0){
+    cx = p.cornerX;
+    breakY = HOOPY + Math.sqrt(p.r3*p.r3 - (25-cx)*(25-cx));
+  }
+  return {r3:p.r3, lane:p.lane, restricted:p.restricted, cornerX:cx, breakY:breakY};
+}
+const sy = y => L - y;                                  // court feet -> svg y (basket at the bottom)
+const CX = 25, CY = 23.5;                               // centre of the drawing, used as the pivot
+const JAIL_DEPTH = 19;                                  // baseline up to the free throw line extended
+const laneEdges = () => { const h = (G().lane)/2; return [HOOPX-h, HOOPX+h]; };  // left, middle, right split here
+
+/* x = 0 is the LEFT side of the floor as the playbook labels it.
+   Where that lands on screen is the coach's choice: pick where the basket
+   sits, then which edge the left side shows on. */
+const VIEWS = {
+  'bottom|left': {angle:0,   mirror:false}, 'bottom|right':{angle:0,   mirror:true},
+  'top|left':    {angle:180, mirror:true},  'top|right':   {angle:180, mirror:false},
+  'left|top':    {angle:90,  mirror:false}, 'left|bottom': {angle:90,  mirror:true},
+  'right|top':   {angle:-90, mirror:true},  'right|bottom':{angle:-90, mirror:false}
+};
+const LEFT_AT_CHOICES = b => (b === 'left' || b === 'right') ? ['top','bottom'] : ['left','right'];
+function view(){
+  const c = cfg();
+  const v = VIEWS[(c.basket||'top') + '|' + (c.leftAt||'left')] || VIEWS['top|left'];
+  return {angle:v.angle, mirror:v.mirror,
+          viewBox: Math.abs(v.angle) === 90 ? '0.3 -2.7 49.4 52.4' : '-1.2 -1.2 52.4 49.4'};
+}
+function rotatePt(u, v, deg){
+  const r = deg*Math.PI/180, c = Math.cos(r), sn = Math.sin(r);
+  const du = u-CX, dv = v-CY;
+  return [CX + du*c - dv*sn, CY + du*sn + dv*c];
+}
+function groupTransform(){
+  const v = view(), parts = [];
+  if (v.angle) parts.push(`rotate(${v.angle} ${CX} ${CY})`);
+  if (v.mirror) parts.push(`translate(${2*CX} 0) scale(-1 1)`);
+  return parts.join(' ');
+}
+function wrapView(inner){
+  const t = groupTransform();
+  return t ? `<g transform="${t}">${inner}</g>` : inner;
+}
+/* keeps a label upright whichever way the floor is turned */
+function labelTransform(lx, ly){
+  const v = view(), parts = [];
+  if (v.mirror) parts.push(`translate(${2*lx} 0) scale(-1 1)`);
+  if (v.angle) parts.push(`rotate(${-v.angle} ${lx} ${ly})`);
+  return parts.join(' ');
+}
+function unview(u, v0){
+  const v = view();
+  let p = [u, v0];
+  if (v.angle) p = rotatePt(p[0], p[1], -v.angle);
+  if (v.mirror) p = [2*CX - p[0], p[1]];
+  return p;
+}
+
+/* areas of the court, in the playbook's language */
+const FORCE = () => cfg().scheme === 'right' ? 'right' : 'left';
+const DENY  = () => FORCE() === 'left' ? 'right' : 'left';
+const thirdOf = x => { const b = laneEdges(); return x < b[0] ? 'left' : x > b[1] ? 'right' : 'middle'; };
+const inJail = (x,y) => cfg().scheme !== 'none' && thirdOf(x) === FORCE() && y <= JAIL_DEPTH;
+const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
+function areaOf(x,y){ return inJail(x,y) ? 'Jail' : cap(thirdOf(x)); }
+function arcPts(cx0, cy0, r, a0, a1, step){
+  const pts = []; const n = Math.max(2, Math.ceil(Math.abs(a1-a0)/(step||0.05)));
+  for (let i=0;i<=n;i++){ const a = a0 + (a1-a0)*i/n; pts.push([cx0 + r*Math.cos(a), cy0 + r*Math.sin(a)]); }
+  return pts;
+}
+const toPath = pts => pts.map((p,i)=> (i?'L':'M') + p[0].toFixed(2) + ' ' + sy(p[1]).toFixed(2)).join(' ');
+
+function isThree(x, y, g){
+  const d = Math.hypot(x-HOOPX, y-HOOPY);
+  if (d >= g.r3) return true;
+  return (x <= g.cornerX || x >= W-g.cornerX) && y <= g.breakY;
+}
+function zoneOf(x, y, g){
+  const dx = x-HOOPX, dy = y-HOOPY;
+  const d = Math.hypot(dx, dy);
+  const ang = Math.abs(Math.atan2(dy, dx) * 180/Math.PI); // 0 = right corner, 90 = straight out, 180 = left
+  const three = isThree(x,y,g);
+  const side = ang < 30 ? 'right' : ang < 72 ? 'right' : ang < 108 ? 'middle' : ang < 150 ? 'left' : 'left';
+  if (three){
+    if (ang < 30) return 'Right corner 3';
+    if (ang < 72) return 'Right wing 3';
+    if (ang < 108) return 'Top of the key 3';
+    if (ang < 150) return 'Left wing 3';
+    return 'Left corner 3';
+  }
+  const half = g.lane/2;
+  if (x >= HOOPX-half && x <= HOOPX+half && y <= 19) return d <= 4 ? 'At the rim' : 'Paint';
+  if (d <= 4) return 'At the rim';
+  if (d <= 14) return 'Short ' + side + ' two';
+  return 'Long ' + side + ' two';
+}
+function zoneBucket(x,y,g){
+  const d = Math.hypot(x-HOOPX, y-HOOPY);
+  if (isThree(x,y,g)){
+    const ang = Math.abs(Math.atan2(y-HOOPY, x-HOOPX)*180/Math.PI);
+    if (ang < 30 || ang > 150) return 'Corner 3';
+    if (ang < 72 || ang > 108) return 'Wing 3';
+    return 'Top 3';
+  }
+  const half = g.lane/2;
+  if (d <= 4) return 'Rim';
+  if (x >= HOOPX-half && x <= HOOPX+half && y <= 19) return 'Paint (non-rim)';
+  if (d <= 14) return 'Short mid-range';
+  return 'Long mid-range';
+}
+const BUCKETS = ['Rim','Paint (non-rim)','Short mid-range','Long mid-range','Corner 3','Wing 3','Top 3'];
+
+/* ============================ state ============================ */
+const KEY = 'bench-tracker-v1';
+const DEFAULTS = {
+  version: 1,
+  config: {
+    level: 'hs',
+    periodStyle: 'quarters',
+    scheme: 'left',        // lock left, lock right, or a plain chart
+    basket: 'top',         // the playbook view: basket at the top,
+    leftAt: 'left',        // left side of the floor on the left
+    triggers: ['Get','Away','Pick'],
+    sets: ['Set 1','Set 2'],
+    blobs: ['BLOB 1','BLOB 2']
+  },
+  games: [],
+  currentId: null
+};
+let state = load();
+let pending = null;     // {x,y}
+let scope = 'game';
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if (raw){
+      const s = JSON.parse(raw);
+      if (s && s.games){
+        s.config = Object.assign({}, DEFAULTS.config, s.config || {});
+        delete s.config.orient; delete s.config.forceSide; delete s.config.contest;
+        return s;
+      }
+    }
+  }catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULTS));
+}
+let storageWorks = true;
+function save(){
+  try{
+    localStorage.setItem(KEY, JSON.stringify(state));
+    if (!storageWorks){ storageWorks = true; }
+  }catch(e){
+    if (storageWorks){
+      storageWorks = false;
+      toast('This browser will not save — back up before closing');
+    }
+  }
+}
+function newGame(){
+  const g = {
+    id: 'g' + Date.now(),
+    opponent: '',
+    date: new Date().toISOString(),
+    period: 1,
+    events: []
+  };
+  state.games.unshift(g);
+  state.currentId = g.id;
+  save();
+  return g;
+}
+function game(){
+  let g = state.games.find(x => x.id === state.currentId);
+  if (!g) g = newGame();
+  return g;
+}
+if (!state.games.length || !state.currentId) newGame();
+
+const cfg = () => state.config;
+const G = () => geom(cfg().level);
+const periodNames = () => cfg().periodStyle === 'halves' ? ['1','2','OT'] : ['1','2','3','4','OT'];
+const periodLabel = p => {
+  const style = cfg().periodStyle;
+  const names = periodNames();
+  const name = names[p-1] || String(p);
+  if (name === 'OT') return 'OT';
+  return (style === 'halves' ? 'H' : 'Q') + name;
+};
+
+/* ============================ events ============================ */
+function log(ev){
+  const g = game();
+  ev.t = Date.now();
+  ev.period = g.period;
+  g.events.push(ev);
+  save();
+  render();
+}
+function undo(){
+  const g = game();
+  if (!g.events.length) return;
+  const ev = g.events.pop();
+  save(); render();
+  toast('Removed ' + describe(ev));
+}
+function describe(ev){
+  if (!ev) return '';
+  if (ev.type === 'shot') return (ev.made ? 'made' : 'missed') + ' shot · ' + ev.zone;
+  if (ev.type === 'break') return 'the ' + ev.name + ' marker';
+  return ev.name;
+}
+
+/* breaks split the game into segments you can report on */
+function markBreak(kind, name){
+  const g = game();
+  if (!g.events.length) return false;
+  const last = g.events[g.events.length-1];
+  if (last && last.type === 'break'){                   // never two in a row
+    if (kind === 'period' && last.kind !== 'period'){   // a horn outranks a timeout
+      last.kind = kind; last.name = name; save();
+    }
+    return false;
+  }
+  g.events.push({t:Date.now(), period:g.period, type:'break', kind:kind, name:name});
+  save();
+  return true;
+}
+function segmentsOf(g){
+  const segs = [{label:'tip-off', events:[]}];
+  g.events.forEach(e => {
+    if (e.type === 'break') segs.push({label:e.name, events:[]});
+    else segs[segs.length-1].events.push(e);
+  });
+  return segs;
+}
+function liveSegment(g){
+  const segs = segmentsOf(g);
+  for (let i = segs.length-1; i >= 0; i--) if (segs[i].events.length) return segs[i];
+  return segs[0];
+}
+function countOf(pred){
+  const g = game();
+  return g.events.filter(e => (scope === 'game' || e.period === g.period) && pred(e)).length;
+}
+function removeLast(pred){
+  const g = game();
+  for (let i = g.events.length-1; i >= 0; i--){
+    if (pred(g.events[i]) && (scope === 'game' || g.events[i].period === g.period)){
+      const ev = g.events.splice(i,1)[0];
+      save(); render();
+      toast('Removed one ' + ev.name);
+      return;
+    }
+  }
+  toast('Nothing to remove');
+}
+
+/* ============================ court drawing ============================ */
+const courtEl = document.getElementById('court');
+function courtMarkup(g){
+  const half = g.lane/2;
+  const scheme = cfg().scheme;
+  let s = '';
+  // floor
+  s += `<rect x="0" y="0" width="${W}" height="${L}" fill="var(--wood)" rx="0.4"/>`;
+  // thirds, coloured the way the playbook colours them
+  if (scheme !== 'none'){
+    const f = FORCE();
+    const tint = {left: f==='left' ? 'rgba(74,150,88,.20)' : 'rgba(198,64,46,.16)',
+                  middle: 'rgba(226,176,44,.17)',
+                  right: f==='right' ? 'rgba(74,150,88,.20)' : 'rgba(198,64,46,.16)'};
+    const lx = HOOPX-half, rx = HOOPX+half, side = lx;
+    s += `<rect x="0" y="0" width="${side}" height="${L}" fill="${tint.left}"/>`;
+    s += `<rect x="${lx}" y="0" width="${g.lane}" height="${L}" fill="${tint.middle}"/>`;
+    s += `<rect x="${rx}" y="0" width="${W-rx}" height="${L}" fill="${tint.right}"/>`;
+    // jail
+    const jx = f === 'left' ? 0 : rx;
+    const jw = f === 'left' ? lx : W-rx;
+    s += `<rect x="${jx}" y="${sy(JAIL_DEPTH)}" width="${jw}" height="${JAIL_DEPTH}" fill="rgba(40,40,44,.30)"/>`;
+    s += `<rect x="${jx}" y="${sy(JAIL_DEPTH)}" width="${jw}" height="${JAIL_DEPTH}" fill="none" stroke="var(--chalk)" stroke-width=".16" stroke-dasharray="1 .8" opacity=".8"/>`;
+    [lx, rx].forEach(x => {
+      s += `<line x1="${x}" y1="0" x2="${x}" y2="${L}" stroke="var(--chalk)" stroke-width=".14" stroke-dasharray="1.2 1" opacity=".5"/>`;
+    });
+  }
+  // paint
+  s += `<rect x="${25-half}" y="${sy(19)}" width="${g.lane}" height="19" fill="var(--paint)" opacity=".55"/>`;
+  const line = 'fill="none" stroke="var(--chalk)" stroke-width=".18" stroke-linecap="round"';
+  // boundary
+  s += `<rect x="0" y="0" width="${W}" height="${L}" ${line} stroke-width=".22"/>`;
+  // lane + free throw line
+  s += `<rect x="${25-half}" y="${sy(19)}" width="${g.lane}" height="19" ${line}/>`;
+  // free throw circle: solid away from the basket, dashed toward it
+  s += `<path d="${toPath(arcPts(25,19,6, 0, Math.PI))}" ${line}/>`;
+  s += `<path d="${toPath(arcPts(25,19,6, Math.PI, 2*Math.PI))}" ${line} stroke-dasharray=".7 .55"/>`;
+  // three point line
+  const a0 = Math.atan2(g.breakY-HOOPY, g.cornerX-HOOPX);
+  const a1 = Math.atan2(g.breakY-HOOPY, (W-g.cornerX)-HOOPX);
+  const arc = arcPts(HOOPX, HOOPY, g.r3, a0, a1 < a0 ? a1 : a1 - 2*Math.PI);
+  const three = [[g.cornerX,0],[g.cornerX,g.breakY]].concat(arc, [[W-g.cornerX,g.breakY],[W-g.cornerX,0]]);
+  s += `<path d="${toPath(three)}" ${line} stroke-width=".2"/>`;
+  // restricted area
+  if (g.restricted){
+    s += `<path d="${toPath(arcPts(HOOPX,HOOPY,g.restricted, 0, Math.PI))}" ${line} stroke-width=".14"/>`;
+  }
+  // backboard + rim
+  s += `<line x1="22" y1="${sy(4)}" x2="28" y2="${sy(4)}" stroke="var(--chalk)" stroke-width=".3" stroke-linecap="round"/>`;
+  s += `<line x1="25" y1="${sy(4)}" x2="25" y2="${sy(4.55)}" stroke="var(--chalk)" stroke-width=".18"/>`;
+  s += `<circle cx="25" cy="${sy(HOOPY)}" r=".75" fill="none" stroke="var(--miss)" stroke-width=".22"/>`;
+  // center circle (clipped by the viewBox)
+  s += `<circle cx="25" cy="${sy(47)}" r="6" ${line}/>`;
+  s += `<circle cx="25" cy="${sy(47)}" r="2" ${line}/>`;
+  // labels, counter-turned so they read upright whichever way the floor faces
+  if (scheme !== 'none'){
+    const txt = (x, y, words, size, op) =>
+      `<g transform="${labelTransform(x,y)}"><text x="${x}" y="${y}" text-anchor="middle"
+        font-family="Barlow Condensed, sans-serif" font-size="${size}" font-weight="600"
+        fill="var(--chalk)" opacity="${op}">${words}</text></g>`;
+    const lx = HOOPX-half, rx = HOOPX+half;
+    s += txt(lx/2, 3.4, 'Left', 2.7, .9);
+    s += txt(25, 3.4, 'Middle', 2.5, .9);
+    s += txt((rx+W)/2, 3.4, 'Right', 2.7, .9);
+    s += txt(FORCE() === 'left' ? lx/2 : (rx+W)/2, sy(11), 'Jail', 3.4, 1);
+  }
+  return wrapView(s);
+}
+function orientedMarks(inner){ return wrapView(inner); }
+function shotMarks(shots, opts){
+  const o = opts || {};
+  const r = o.r || .95, sw = o.sw || .38, op = o.opacity || 1;
+  let s = '';
+  shots.forEach(e => {
+    const x = e.x, y = sy(e.y);
+    if (o.ghost){
+      s += `<circle cx="${x}" cy="${y}" r="${r*0.62}" fill="var(--chalk)" opacity=".3"/>`;
+      return;
+    }
+    if (e.made){
+      s += `<circle cx="${x}" cy="${y}" r="${r}" fill="var(--make)" opacity="${op}"/>`;
+      s += `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="var(--panel)" stroke-width=".16"/>`;
+    }else{
+      s += `<g opacity="${op}" stroke="var(--miss)" stroke-width="${sw}" stroke-linecap="round">
+             <line x1="${x-r*.85}" y1="${y-r*.85}" x2="${x+r*.85}" y2="${y+r*.85}"/>
+             <line x1="${x-r*.85}" y1="${y+r*.85}" x2="${x+r*.85}" y2="${y-r*.85}"/></g>`;
+    }
+  });
+  return s;
+}
+function drawCourt(){
+  const v = view();
+  courtEl.setAttribute('viewBox', v.viewBox);
+  const t = groupTransform();
+  const attr = t ? ` transform="${t}"` : '';
+  courtEl.innerHTML = courtMarkup(G()) + `<g id="marks"${attr}></g><g id="pendingmark"${attr}></g>`;
+}
+function drawMarks(){
+  const g = game();
+  const shots = g.events.filter(e => e.type === 'shot');
+  const older = shots.filter(e => e.period !== g.period);
+  const now = shots.filter(e => e.period === g.period);
+  const m = courtEl.querySelector('#marks');
+  if (m) m.innerHTML = shotMarks(older, {opacity:.55}) + shotMarks(now, {});
+  const p = courtEl.querySelector('#pendingmark');
+  if (p) p.innerHTML = pending
+    ? `<circle cx="${pending.x}" cy="${sy(pending.y)}" r="1.5" fill="none" stroke="var(--amber)" stroke-width=".3"/>
+       <circle cx="${pending.x}" cy="${sy(pending.y)}" r=".45" fill="var(--amber)"/>`
+    : '';
+}
+
+/* court tapping */
+let down = null;
+courtEl.addEventListener('pointerdown', e => { down = {x:e.clientX, y:e.clientY}; });
+courtEl.addEventListener('pointerup', e => {
+  if (!down) return;
+  const moved = Math.hypot(e.clientX-down.x, e.clientY-down.y);
+  down = null;
+  if (moved > 12) return;                 // treat as a scroll, not a tap
+  const r = courtEl.getBoundingClientRect();
+  const vb = courtEl.viewBox.baseVal;
+  const scale = Math.min(r.width/vb.width, r.height/vb.height);   // preserveAspectRatio: meet
+  const offX = (r.width - vb.width*scale)/2, offY = (r.height - vb.height*scale)/2;
+  let ux = (e.clientX - r.left - offX)/scale + vb.x;
+  let uy = (e.clientY - r.top  - offY)/scale + vb.y;
+  const p2 = unview(ux, uy); ux = p2[0]; uy = p2[1];
+  const x = Math.max(0, Math.min(W, ux));
+  const y = Math.max(0, Math.min(L, L - uy));
+  pending = {x, y};
+  render();
+});
+
+/* ============================ rendering ============================ */
+const $ = id => document.getElementById(id);
+
+function render(){
+  const g = game(), geo = G();
+  // header
+  if (document.activeElement !== $('opp')) $('opp').value = g.opponent || '';
+  $('gamedate').textContent = new Date(g.date).toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric'})
+     + ' · ' + nEntries(g) + (nEntries(g) === 1 ? ' entry' : ' entries');
+  // periods
+  const names = periodNames();
+  $('periods').innerHTML = names.map((n,i) =>
+    `<button data-p="${i+1}" aria-pressed="${g.period===i+1}">${n==='OT'?'OT':(cfg().periodStyle==='halves'?'H':'Q')+n}</button>`).join('');
+  // undo
+  const last = g.events[g.events.length-1];
+  $('undo').disabled = !last;
+  $('undotxt').textContent = last ? describe(last) : 'nothing yet';
+
+  // shots
+  const shots = g.events.filter(e => e.type==='shot' && (scope==='game' || e.period===g.period));
+  const made = shots.filter(e=>e.made).length;
+  const th = shots.filter(e=>e.three), thMade = th.filter(e=>e.made).length;
+  $('shottally').innerHTML = `<b>${made}</b> for <b>${shots.length}</b>` +
+    (shots.length ? ` · ${pct(made,shots.length)}` : '') +
+    (th.length ? ` &nbsp;|&nbsp; 3s <b>${thMade}</b>/<b>${th.length}</b>` : '');
+
+  drawMarks();
+  renderShotbar();
+  renderCalls();
+}
+function nEntries(g){ return g.events.filter(e => e.type !== 'break').length; }
+function pct(a,b){ return b ? Math.round(a*1000/b)/10 + '%' : '—'; }
+
+function renderShotbar(){
+  const bar = $('shotbar');
+  if (!pending){
+    bar.innerHTML = `<div class="hint" id="shothint">Tap the spot on the floor where the shot went up</div>`;
+    return;
+  }
+  const geo = G();
+  const d = Math.hypot(pending.x-HOOPX, pending.y-HOOPY);
+  const z = zoneOf(pending.x, pending.y, geo);
+  const area = areaOf(pending.x, pending.y);
+  const three = isThree(pending.x, pending.y, geo);
+  const tag = cfg().scheme !== 'none' ? `<em class="area ${area==='Jail'?'jail':''}">${esc(area)}</em> · ` : '';
+  bar.innerHTML =
+    `<div class="zoneread">${tag}<b>${esc(z)}</b> · ${d.toFixed(0)} ft${three?' · worth 3':''}
+       <button class="cancel" id="cancelshot" aria-label="Cancel this shot">✕</button></div>
+     <div class="shotrow">
+       <button class="made" data-made="1">Made</button>
+       <button class="missed" data-made="0">Missed</button>
+     </div>`;
+  $('cancelshot').onclick = () => { pending = null; render(); };
+  bar.querySelectorAll('button[data-made]').forEach(b => {
+    b.onclick = () => recordShot(b.dataset.made === '1');
+  });
+}
+function recordShot(made){
+  const geo = G();
+  const ev = {
+    type:'shot', x:+pending.x.toFixed(2), y:+pending.y.toFixed(2), made:made,
+    three: isThree(pending.x, pending.y, geo),
+    dist: +Math.hypot(pending.x-HOOPX, pending.y-HOOPY).toFixed(1),
+    zone: zoneOf(pending.x, pending.y, geo),
+    bucket: zoneBucket(pending.x, pending.y, geo),
+    area: areaOf(pending.x, pending.y)
+  };
+  pending = null;
+  log(ev);
+}
+
+function callCard(kind, name){
+  const n = countOf(e => e.type===kind && e.name===name);
+  const wrap = document.createElement('div');
+  wrap.className = 'callwrap';
+  wrap.innerHTML =
+    `<button class="call${n?'':' zero'}"><span class="label"></span><span class="n num">${n}</span></button>
+     <button class="minus" aria-label="Remove one ${name}">−</button>`;
+  wrap.querySelector('.label').textContent = name;
+  wrap.querySelector('.call').onclick = (ev) => {
+    log({type:kind, name:name});
+    const el = ev.currentTarget; el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+  };
+  wrap.querySelector('.minus').onclick = () => removeLast(e => e.type===kind && e.name===name);
+  return wrap;
+}
+function renderCalls(){
+  [['triggers','trigger'],['sets','set'],['blobs','blob']].forEach(([id,kind]) => {
+    const host = $(id); host.innerHTML = '';
+    cfg()[id].forEach(name => host.appendChild(callCard(kind, name)));
+  });
+}
+
+/* ============================ header interactions ============================ */
+$('opp').addEventListener('input', e => { game().opponent = e.target.value; save(); });
+$('opp').addEventListener('blur', () => render());
+$('periods').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const g = game(), next = +b.dataset.p;
+  if (next > g.period && g.events.some(ev => ev.period === g.period && ev.type !== 'break')){
+    markBreak('period', 'start of ' + periodLabel(next));
+  }
+  g.period = next; save(); render();
+});
+$('timeout').onclick = () => {
+  markBreak('timeout', 'timeout in ' + periodLabel(game().period));
+  render();
+  buildReport(game(), 'segment');
+  openSheet('report');
+};
+$('undo').onclick = undo;
+$('scope').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  scope = b.dataset.scope;
+  [...$('scope').children].forEach(c => c.setAttribute('aria-pressed', c === b));
+  render();
+});
+
+let toastTimer;
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>{ t.hidden = true; }, 1800);
+}
+
+/* ============================ report ============================ */
+function openSheet(id){ $(id).hidden = false; }
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { $(b.dataset.close).hidden = true; });
+document.querySelectorAll('.sheet').forEach(s => s.addEventListener('click', e => { if (e.target === s) s.hidden = true; }));
+
+$('openreport').onclick = () => { buildReport(game(), 'period'); openSheet('report'); };
+
+let reportCtx = {game:null, scope:'period'};
+
+function scopeSets(g){
+  const seg = liveSegment(g);
+  const plain = g.events.filter(e => e.type !== 'break');
+  return {
+    segment: {label: 'Since ' + seg.label, short:'Since ' + seg.label, events: seg.events},
+    period:  {label: periodLabel(g.period), short: periodLabel(g.period), events: plain.filter(e => e.period === g.period)},
+    game:    {label: 'Whole game', short:'Whole game', events: plain}
+  };
+}
+
+function buildReport(g, scope){
+  g = g || game();
+  reportCtx = {game:g, scope:scope || 'period'};
+  const sets = scopeSets(g);
+  const sel = sets[reportCtx.scope] || sets.game;
+  const ev = sel.events;
+  const shots = ev.filter(e => e.type === 'shot');
+  const allShots = g.events.filter(e => e.type === 'shot');
+  const geo = G();
+
+  let html = '';
+
+  /* scope picker */
+  html += `<div class="chips" id="scopechips">` +
+    ['segment','period','game'].map(k =>
+      `<button data-s="${k}" aria-pressed="${k===reportCtx.scope}">${esc(sets[k].short)}</button>`).join('') +
+    `</div>`;
+
+  /* headline numbers */
+  const made = shots.filter(s=>s.made).length;
+  const th = shots.filter(s=>s.three), thMade = th.filter(s=>s.made).length;
+  const inside = shots.filter(s => s.bucket === 'Rim' || s.bucket === 'Paint (non-rim)').length;
+  const trig = ev.filter(e => e.type==='trigger').length;
+  const plays = ev.filter(e => e.type==='set' || e.type==='blob').length;
+  html += `<div class="tiles">
+    <div class="tile"><span class="k">They shot</span><b class="num">${made}/${shots.length}</b><span class="s">${pct(made,shots.length)}</span></div>
+    <div class="tile"><span class="k">From three</span><b class="num">${thMade}/${th.length}</b><span class="s">${pct(thMade,th.length)}</span></div>
+    ${(()=>{ const sp = areaSplit(shots);
+      if (!sp) return `<div class="tile"><span class="k">In the paint</span><b class="num">${shots.length?Math.round(inside*100/shots.length)+'%':'—'}</b><span class="s">${inside} of ${shots.length} shots</span></div>`;
+      return `<div class="tile"><span class="k">Into jail</span><b class="num">${shots.length?Math.round(sp.jail.length*100/shots.length)+'%':'—'}</b><span class="s">${sp.jail.length} of ${shots.length} shots</span></div>
+        <div class="tile"><span class="k">${esc(sp.denyName)} side</span><b class="num">${shots.length?Math.round(sp.deny.length*100/shots.length)+'%':'—'}</b><span class="s">${sp.deny.length} shots we should deny</span></div>`;
+    })()}
+    <div class="tile"><span class="k">Triggers</span><b class="num">${trig}</b><span class="s">${esc(topName(ev,'trigger'))}</span></div>
+    <div class="tile"><span class="k">Plays run</span><b class="num">${plays}</b><span class="s">${esc(topName(ev,'set','blob'))}</span></div>
+  </div>`;
+
+  /* what to say in the huddle */
+  const notes = huddleNotes(ev, shots, geo);
+  if (notes.length){
+    html += `<div class="huddle"><h3>Worth saying</h3><ul>` +
+      notes.map(n => `<li>${esc(n)}</li>`).join('') + `</ul></div>`;
+  }
+
+  /* scoped shot chart */
+  const inSet = new Set(shots);
+  const ghosts = allShots.filter(s => !inSet.has(s));
+  html += `<div class="block"><h3>${esc(sel.label)} — where they shot it</h3>
+    <div class="minicourt"><svg viewBox="${view().viewBox}">${courtMarkup(geo)}${orientedMarks(shotMarks(ghosts,{ghost:true})+shotMarks(shots,{r:1.15,sw:.45}))}</svg></div>
+    <div class="legend"><span><i style="background:var(--make)"></i>made</span><span><i style="background:var(--miss)"></i>missed</span>${ghosts.length?`<span><i style="background:var(--chalk);opacity:.45"></i>earlier in the game</span>`:''}</div>
+  </div>`;
+
+  const split = areaSplit(shots);
+  if (split && shots.length){
+    const line = (name, set) => [name, set.filter(s=>s.made).length, set.length,
+      pct(set.filter(s=>s.made).length, set.length),
+      set.filter(s=>s.three).length,
+      Math.round(set.length*100/shots.length)+'%'];
+    html += `<div class="block"><h3>Where we sent them</h3>` +
+      table(['', 'M','A','FG%','3PA','Share'], [
+        line('Jail', split.jail),
+        line(split.forceName + ' side, above jail', split.force),
+        line('Middle', split.mid),
+        line(split.denyName + ' side', split.deny)
+      ]) +
+      `<p class="note">Jail and the ${esc(split.forceName.toLowerCase())} side are where shots are supposed to come from. Anything in the bottom row got past the deny.</p></div>`;
+  }
+
+  const rows = BUCKETS.map(b => {
+    const set = shots.filter(s => s.bucket === b);
+    return [b, set.filter(s=>s.made).length, set.length, pct(set.filter(s=>s.made).length, set.length),
+            shots.length ? Math.round(set.length*100/shots.length)+'%' : '—'];
+  }).filter(r => r[2] > 0);
+  if (rows.length){
+    html += `<div class="block"><h3>By area</h3>` + table(['Area','M','A','FG%','Share'], rows) + `</div>`;
+  }
+
+  /* calls, always broken out by period so the trend is visible */
+  const names = periodNames();
+  const cols = names.map((_,i)=>i+1).filter(p => g.events.some(e => e.period === p && e.type !== 'break'));
+  const use = cols.length ? cols : [g.period];
+  html += `<div class="block"><h3>Triggers by period</h3>` + countTable(g,'trigger',cfg().triggers,use) + `</div>`;
+  html += `<div class="block"><h3>Set plays by period</h3>` + countTable(g,'set',cfg().sets,use) + `</div>`;
+  html += `<div class="block"><h3>Baseline out of bounds by period</h3>` + countTable(g,'blob',cfg().blobs,use) + `</div>`;
+
+  html += `<div class="block" id="reportactions"><h3>Take it with you</h3>
+    <div class="btns">
+      <button class="btn primary" id="printreport">Save this report as a PDF</button>
+      <button class="btn" id="copysum">Copy this report</button>
+      <button class="btn" id="savecsv">Save the game as CSV</button>
+    </div>
+    <p class="note">Saving as a PDF goes through the print sheet — on an iPad, choose Save to Files. Copying gives you plain text for a group chat. The CSV has one row per entry, with every shot's spot on the floor.</p></div>`;
+
+  $('reporttitle').textContent = (g.opponent || 'Opponent') + ' · ' + sel.label;
+  $('reportbody').innerHTML = html;
+  $('scopechips').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    buildReport(reportCtx.game, b.dataset.s);
+    $('report').querySelector('.inner').scrollTop = 0;
+  });
+  $('savecsv').onclick = () => saveCsv(g);
+  $('copysum').onclick = () => copyText(summaryText(g, ev, sel.label));
+  $('printreport').onclick = () => window.print();
+}
+
+function topName(ev, ...kinds){
+  const set = ev.filter(e => kinds.includes(e.type));
+  if (!set.length) return 'none yet';
+  const tally = {};
+  set.forEach(e => tally[e.name] = (tally[e.name]||0)+1);
+  const best = Object.entries(tally).sort((a,b)=>b[1]-a[1])[0];
+  return `${best[0]} most — ${best[1]}`;
+}
+
+function areaSplit(shots){
+  if (cfg().scheme === 'none') return null;
+  const f = FORCE(), d = DENY();
+  return {
+    jail:  shots.filter(s => inJail(s.x, s.y)),
+    force: shots.filter(s => !inJail(s.x, s.y) && thirdOf(s.x) === f),
+    mid:   shots.filter(s => thirdOf(s.x) === 'middle'),
+    deny:  shots.filter(s => thirdOf(s.x) === d),
+    forceName: cap(f), denyName: cap(d)
+  };
+}
+const PHRASE = {
+  'Rim':'at the rim', 'Paint (non-rim)':'in the paint',
+  'Short mid-range':'from short mid-range', 'Long mid-range':'from long mid-range',
+  'Corner 3':'from the corners', 'Wing 3':'from the wings', 'Top 3':'from the top of the key'
+};
+function huddleNotes(ev, shots, geo){
+  const out = [];
+  const made = shots.filter(s=>s.made).length;
+
+  const split = areaSplit(shots);
+  if (split && shots.length >= 4){
+    const forced = split.jail.length + split.force.length;
+    const jailPct = Math.round(split.jail.length*100/shots.length);
+    if (split.deny.length >= 3 && split.deny.length >= forced)
+      out.push(`The deny is leaking — ${split.deny.length} shots from the ${split.denyName.toLowerCase()} side against ${forced} on the ${split.forceName.toLowerCase()}.`);
+    else if (jailPct >= 35)
+      out.push(`Jail is working — ${split.jail.length} of ${shots.length} shots came from there.`);
+    else if (forced >= shots.length*0.55)
+      out.push(`We are influencing left, but only ${split.jail.length} shots got all the way into jail.`);
+    const denyThrees = split.deny.filter(s=>s.three).length;
+    if (denyThrees >= 2) out.push(`${denyThrees} threes from the ${split.denyName.toLowerCase()} side.`);
+    const jailFg = split.jail.filter(s=>s.made).length;
+    if (split.jail.length >= 4 && jailFg/split.jail.length >= .5)
+      out.push(`They are making them anyway — ${jailFg} of ${split.jail.length} from jail.`);
+  }
+
+  if (shots.length >= 4){
+    const byBucket = {};
+    shots.forEach(s => { (byBucket[s.bucket] = byBucket[s.bucket] || []).push(s); });
+    // hottest area they are actually getting to
+    const hot = Object.entries(byBucket)
+      .filter(([,v]) => v.length >= 3 && v.filter(s=>s.made).length / v.length >= .55)
+      .sort((a,b) => b[1].length - a[1].length)[0];
+    if (hot) out.push(`They are ${hot[1].filter(s=>s.made).length} of ${hot[1].length} ${PHRASE[hot[0]] || hot[0]}.`);
+    // where the volume is going
+    const vol = Object.entries(byBucket).sort((a,b)=>b[1].length-a[1].length)[0];
+    if (vol && vol[1].length / shots.length >= .35 && (!hot || hot[0] !== vol[0]))
+      out.push(`${Math.round(vol[1].length*100/shots.length)}% of their shots came ${PHRASE[vol[0]] || vol[0]}.`);
+    const th = shots.filter(s=>s.three).length;
+    if (th / shots.length >= .45) out.push(`They are hunting threes — ${th} of ${shots.length} attempts.`);
+    const rim = shots.filter(s=>s.bucket==='Rim').length;
+    if (rim / shots.length >= .35 && (!hot || hot[0] !== 'Rim') && (!vol || vol[0] !== 'Rim'))
+      out.push(`They are getting downhill — ${rim} of ${shots.length} attempts at the rim.`);
+  } else if (shots.length){
+    out.push(`Only ${shots.length} shot${shots.length===1?'':'s'} logged here — thin to read much into.`);
+  }
+
+  ['trigger','set','blob'].forEach((kind,i) => {
+    const label = ['trigger','set play','BLOB'][i];
+    const names = cfg()[['triggers','sets','blobs'][i]];
+    const used = names.map(n => [n, ev.filter(e => e.type===kind && e.name===n).length]);
+    const total = used.reduce((a,b)=>a+b[1],0);
+    if (total >= 5){
+      const top = used.slice().sort((a,b)=>b[1]-a[1])[0];
+      if (top[1]/total >= .55) out.push(`You have leaned on ${top[0]} — ${top[1]} of ${total} ${label}s.`);
+      const unused = used.filter(u => u[1] === 0).map(u => u[0]);
+      if (unused.length && unused.length < names.length)
+        out.push(`No ${unused.join(' or ')} yet.`);
+    }
+  });
+
+  return out.slice(0,4);
+}
+function table(head, rows){
+  return '<table><thead><tr>' + head.map(h=>`<th>${h}</th>`).join('') + '</tr></thead><tbody>' +
+    rows.map(r => '<tr>' + r.map((c,i)=> i ? `<td class="n">${c}</td>` : `<td>${esc(c)}</td>`).join('') + '</tr>').join('') +
+    '</tbody></table>';
+}
+function countTable(g, kind, names, cols){
+  if (!names.length) return '<p class="note">Nothing set up here yet.</p>';
+  const head = [''].concat(cols.map(periodLabel), ['Total']);
+  const rows = names.map(n => {
+    const per = cols.map(p => g.events.filter(e => e.type===kind && e.name===n && e.period===p).length);
+    return [n].concat(per, [per.reduce((a,b)=>a+b,0)]);
+  });
+  const tot = ['Total'].concat(cols.map(p => g.events.filter(e=>e.type===kind && e.period===p).length));
+  tot.push(tot.slice(1).reduce((a,b)=>a+b,0));
+  rows.push(tot);
+  return table(head, rows);
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function summaryText(g, ev, label){
+  ev = ev || g.events.filter(e => e.type !== 'break');
+  const shots = ev.filter(e=>e.type==='shot');
+  const L2 = [];
+  L2.push(`${g.opponent || 'Opponent'} — ${new Date(g.date).toLocaleDateString()}`);
+  L2.push(label || 'Whole game');
+  L2.push(`Their shooting: ${shots.filter(s=>s.made).length}/${shots.length} (${pct(shots.filter(s=>s.made).length, shots.length)}), ` +
+          `3s ${shots.filter(s=>s.three&&s.made).length}/${shots.filter(s=>s.three).length}`);
+  BUCKETS.forEach(b => {
+    const set = shots.filter(s=>s.bucket===b);
+    if (set.length) L2.push(`  ${b}: ${set.filter(s=>s.made).length}/${set.length}`);
+  });
+  const sp = areaSplit(shots);
+  if (sp){
+    const f = set => `${set.filter(s=>s.made).length}/${set.length}`;
+    L2.push(`Jail ${f(sp.jail)}, ${sp.forceName.toLowerCase()} side ${f(sp.force)}, middle ${f(sp.mid)}, ${sp.denyName.toLowerCase()} side ${f(sp.deny)}`);
+  }
+  ['trigger','set','blob'].forEach((kind,i) => {
+    const label2 = ['Triggers','Set plays','BLOBs'][i];
+    const names = cfg()[['triggers','sets','blobs'][i]];
+    const parts = names.map(n => `${n} ${ev.filter(e=>e.type===kind&&e.name===n).length}`);
+    if (parts.length) L2.push(`${label2}: ${parts.join(', ')}`);
+  });
+  const notes = huddleNotes(ev, shots, G());
+  if (notes.length) L2.push('', ...notes.map(n => '• ' + n));
+  return L2.join('\n');
+}
+function csvText(g){
+  const head = ['time','period','type','name','result','area','x_ft_from_left_sideline','y_ft_from_baseline','distance_ft','three','zone'];
+  const rows = g.events.map(e => [
+    new Date(e.t).toISOString(),
+    periodLabel(e.period),
+    e.type,
+    e.type==='shot' ? '' : e.name,
+    e.type==='shot' ? (e.made ? 'make' : 'miss') : '',
+    e.type==='shot' ? (e.area || '') : '',
+    e.type==='shot' ? e.x : '',
+    e.type==='shot' ? e.y : '',
+    e.type==='shot' ? e.dist : '',
+    e.type==='shot' ? (e.three ? '3' : '2') : '',
+    e.type==='shot' ? e.zone : ''
+  ]);
+  return [head].concat(rows).map(r => r.map(c => {
+    const s = String(c ?? '');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
+}
+function fileName(g, ext){
+  const d = new Date(g.date);
+  const stamp = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const who = (g.opponent || 'opponent').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').toLowerCase();
+  return `${stamp}-${who}.${ext}`;
+}
+async function offerFile(name, text, fallbackMsg){
+  // a hosted page asks the platform to save; a local copy of this page can just download
+  try{
+    if (window.claude && typeof window.claude.use === 'function'){
+      const dl = await window.claude.use('downloads');
+      if (dl){ await dl.save({filename:name, data:text}); toast('Saved'); return true; }
+    }
+  }catch(err){
+    if (err && err.code === 'declined') return false;
+  }
+  try{
+    const url = URL.createObjectURL(new Blob([text], {type:'text/plain'}));
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('Saved'); return true;
+  }catch(e){}
+  copyText(text, fallbackMsg);
+  return false;
+}
+async function saveCsv(g){
+  if (!g.events.length){ toast('Nothing logged yet'); return; }
+  offerFile(fileName(g,'csv'), csvText(g), 'CSV copied — paste it into a spreadsheet');
+}
+async function saveBackup(){
+  const payload = JSON.stringify({kind:'bench-tracker', version:1, config:state.config, games:state.games});
+  const d = new Date();
+  const stamp = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  offerFile(`bench-backup-${stamp}.json`, payload, 'Backup copied to the clipboard');
+}
+function restoreBackup(file){
+  const r = new FileReader();
+  r.onload = () => {
+    let data;
+    try{ data = JSON.parse(r.result); }catch(e){ toast('That file is not a backup'); return; }
+    if (!data || !Array.isArray(data.games)){ toast('That file is not a backup'); return; }
+    const hadGames = state.games.some(g => g.events.length);
+    if (!hadGames && data.config) state.config = Object.assign({}, DEFAULTS.config, data.config);
+    let added = 0;
+    data.games.forEach(g => {
+      if (!g || !g.id || !Array.isArray(g.events)) return;
+      const i = state.games.findIndex(x => x.id === g.id);
+      if (i >= 0) state.games[i] = g; else { state.games.push(g); added++; }
+    });
+    state.games.sort((a,b) => new Date(b.date) - new Date(a.date));
+    save(); drawCourt(); buildSettings(); render();
+    toast(added ? `${added} game${added===1?'':'s'} added` : 'Backup merged');
+  };
+  r.onerror = () => toast('Could not read that file');
+  r.readAsText(file);
+}
+function copyText(text, msg){
+  const done = () => toast(msg || 'Copied');
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done, () => fallback());
+  } else fallback();
+  function fallback(){
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){ toast('Copy failed'); }
+    document.body.removeChild(ta);
+  }
+}
+
+/* ============================ settings ============================ */
+$('opensettings').onclick = () => { buildSettings(); openSheet('settings'); };
+
+function leftAtOptions(){
+  const choices = LEFT_AT_CHOICES(cfg().basket || 'top');
+  if (choices.indexOf(cfg().leftAt) === -1){ cfg().leftAt = choices[0]; save(); }
+  $('leftAt').innerHTML = choices.map(c => `<option value="${c}">${cap(c)}</option>`).join('');
+  $('leftAt').value = cfg().leftAt;
+}
+function buildSettings(){
+  $('level').value = cfg().level;
+  $('scheme').value = cfg().scheme || 'left';
+  $('basket').value = cfg().basket || 'top';
+  leftAtOptions();
+  $('periodStyle').value = cfg().periodStyle;
+  nameEditor('edit-triggers','triggers');
+  nameEditor('edit-sets','sets');
+  nameEditor('edit-blobs','blobs');
+  gameList();
+  storageNote();
+}
+$('level').onchange = e => { cfg().level = e.target.value; save(); drawCourt(); render(); };
+$('scheme').onchange = e => { cfg().scheme = e.target.value; save(); drawCourt(); render(); };
+$('basket').onchange = e => { cfg().basket = e.target.value; save(); leftAtOptions(); drawCourt(); render(); };
+$('leftAt').onchange = e => { cfg().leftAt = e.target.value; save(); drawCourt(); render(); };
+$('periodStyle').onchange = e => {
+  cfg().periodStyle = e.target.value;
+  const max = periodNames().length;
+  if (game().period > max) game().period = max;
+  save(); render();
+};
+function nameEditor(hostId, key){
+  const host = $(hostId); host.innerHTML = '';
+  cfg()[key].forEach((name, i) => {
+    const row = document.createElement('div');
+    row.className = 'nameitem';
+    row.innerHTML = `<input type="text" value="${esc(name)}" aria-label="Name"><button class="btn danger" title="Remove">Remove</button>`;
+    const input = row.querySelector('input');
+    input.oninput = () => {
+      const old = cfg()[key][i], val = input.value;
+      cfg()[key][i] = val;
+      // keep already-logged entries pointing at the renamed button
+      state.games.forEach(g => g.events.forEach(e => { if (e.name === old) e.name = val; }));
+      save(); renderCalls();
+    };
+    row.querySelector('button').onclick = () => {
+      cfg()[key].splice(i,1); save(); buildSettings(); renderCalls();
+    };
+    host.appendChild(row);
+  });
+  if (!cfg()[key].length) host.innerHTML = '<p class="note">Nothing here yet.</p>';
+}
+$('add-set').onclick = () => { cfg().sets.push('Set ' + (cfg().sets.length+1)); save(); buildSettings(); renderCalls(); };
+$('add-blob').onclick = () => { cfg().blobs.push('BLOB ' + (cfg().blobs.length+1)); save(); buildSettings(); renderCalls(); };
+$('newgame').onclick = () => {
+  if (game().events.length === 0){ toast('This game is already empty'); return; }
+  newGame(); pending = null; buildSettings(); render();
+  toast('New game started');
+};
+$('savebackup').onclick = saveBackup;
+$('openbackup').onclick = () => $('backupfile').click();
+$('backupfile').onchange = e => { if (e.target.files[0]) restoreBackup(e.target.files[0]); e.target.value = ''; };
+function storageNote(){
+  $('storagenote').textContent = storageWorks
+    ? 'Games are saved on this device as you tap. A backup file is how you move one to another device, or keep it if this one is wiped.'
+    : 'This browser is not letting the page save anything. Nothing will survive closing or reloading the tab — save a backup file before you finish.';
+  $('storagenote').style.color = storageWorks ? '' : 'var(--miss)';
+}
+function gameList(){
+  const host = $('gamelist'); host.innerHTML = '';
+  state.games.slice(0,12).forEach(g => {
+    const el = document.createElement('div');
+    el.className = 'gameitem';
+    const shots = g.events.filter(e=>e.type==='shot').length;
+    el.innerHTML = `<div class="who"><b></b><span>${new Date(g.date).toLocaleDateString()} · ${shots} shots · ${g.events.length} entries${g.id===state.currentId?' · live':''}</span></div>
+      <button class="btn" data-act="open">Open</button><button class="btn" data-act="report">Report</button>`;
+    el.querySelector('b').textContent = g.opponent || 'Untitled game';
+    el.querySelector('[data-act=open]').onclick = () => {
+      state.currentId = g.id; pending = null; save(); $('settings').hidden = true; render();
+    };
+    el.querySelector('[data-act=report]').onclick = () => { buildReport(g,'game'); $('settings').hidden = true; openSheet('report'); };
+    host.appendChild(el);
+  });
+  if (!state.games.length) host.innerHTML = '<p class="note">No games yet.</p>';
+}
+
+/* keyboard shortcuts for a laptop on the scorer's table */
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.key === 'z' && (e.metaKey || e.ctrlKey)){ e.preventDefault(); undo(); return; }
+  if (pending && (e.key === 'm' || e.key === 'M' || e.key === 'Enter')){ recordShot(true); return; }
+  if (pending && (e.key === 'x' || e.key === 'X' || e.key === ' ')){ e.preventDefault(); recordShot(false); return; }
+  if (pending && e.key === 'Escape'){ pending = null; render(); }
+});
+
+drawCourt();
+render();
+
+/* makes the installed app open with no connection at all */
+if ('serviceWorker' in navigator && location.protocol === 'https:'){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+})();
+</script>
+</body>
+</html>
