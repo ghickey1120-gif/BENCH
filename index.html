@@ -217,13 +217,14 @@ input[type=text],select{
 .btn.primary{background:var(--amber); border-color:transparent; color:#14181F; font-weight:600}
 .btn.ghost{background:none}
 .btn.danger{color:var(--miss)}
+.btn.danger[data-armed="1"]{background:var(--miss); color:#fff; border-color:transparent}
 .btns{display:flex; gap:8px; flex-wrap:wrap}
 .namelist{display:flex; flex-direction:column; gap:8px}
 .nameitem{display:flex; gap:8px; align-items:center}
 .nameitem .btn{height:42px; padding:0 12px}
 .note{font-size:13px; color:var(--dim); margin:6px 0 0}
 .gamelist{display:flex; flex-direction:column; gap:6px}
-.gameitem{display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--edge); border-radius:10px; background:var(--panel2)}
+.gameitem{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px; border:1px solid var(--edge); border-radius:10px; background:var(--panel2)}
 .gameitem .who{flex:1; min-width:0}
 .gameitem .who b{display:block; font-weight:600}
 .gameitem .who span{font-size:12px; color:var(--dim)}
@@ -1334,19 +1335,46 @@ function storageNote(){
     : 'This browser is not letting the page save anything. Nothing will survive closing or reloading the tab — save a backup file before you finish.';
   $('storagenote').style.color = storageWorks ? '' : 'var(--miss)';
 }
+function deleteGame(id){
+  const i = state.games.findIndex(g => g.id === id);
+  if (i < 0) return;
+  const wasLive = state.games[i].id === state.currentId;
+  const name = state.games[i].opponent || 'that game';
+  state.games.splice(i, 1);
+  if (wasLive){
+    if (state.games.length) state.currentId = state.games[0].id;
+    else { state.currentId = null; newGame(); }
+    pending = null;
+  }
+  save(); buildSettings(); render();
+  toast('Deleted ' + name);
+}
 function gameList(){
   const host = $('gamelist'); host.innerHTML = '';
-  state.games.slice(0,12).forEach(g => {
+  state.games.forEach(g => {
     const el = document.createElement('div');
     el.className = 'gameitem';
     const shots = g.events.filter(e=>e.type==='shot').length;
-    el.innerHTML = `<div class="who"><b></b><span>${new Date(g.date).toLocaleDateString()} · ${shots} shots · ${g.events.length} entries${g.id===state.currentId?' · live':''}</span></div>
-      <button class="btn" data-act="open">Open</button><button class="btn" data-act="report">Report</button>`;
+    const live = g.id === state.currentId;
+    el.innerHTML = `<div class="who"><b></b><span>${new Date(g.date).toLocaleDateString()} · ${shots} shots · ${nEntries(g)} entries${live?' · live':''}</span></div>
+      <button class="btn" data-act="open">Open</button>
+      <button class="btn" data-act="report">Report</button>
+      <button class="btn danger" data-act="del">Delete</button>`;
     el.querySelector('b').textContent = g.opponent || 'Untitled game';
     el.querySelector('[data-act=open]').onclick = () => {
       state.currentId = g.id; pending = null; save(); $('settings').hidden = true; render();
     };
     el.querySelector('[data-act=report]').onclick = () => { buildReport(g,'game'); $('settings').hidden = true; openSheet('report'); };
+    const del = el.querySelector('[data-act=del]');
+    del.onclick = () => {
+      if (del.dataset.armed === '1'){ deleteGame(g.id); return; }
+      // ask twice, so a stray thumb can't wipe a game
+      host.querySelectorAll('[data-act=del]').forEach(b => { b.dataset.armed = ''; b.textContent = 'Delete'; });
+      del.dataset.armed = '1';
+      del.textContent = live ? 'Delete the live game?' : 'Sure?';
+      clearTimeout(del._t);
+      del._t = setTimeout(() => { del.dataset.armed = ''; del.textContent = 'Delete'; }, 5000);
+    };
     host.appendChild(el);
   });
   if (!state.games.length) host.innerHTML = '<p class="note">No games yet.</p>';

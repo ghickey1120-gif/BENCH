@@ -1,7 +1,7 @@
 /* Bench tracker service worker.
    Caches the app on first visit so it opens with no connection afterwards.
    Bump CACHE whenever index.html changes, or phones keep serving the old one. */
-const CACHE = 'bench-v1';
+const CACHE = 'bench-v2';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './apple-touch-icon.png', './icon-192.png', './icon-512.png'
